@@ -4,6 +4,7 @@ import MainEditor from "./components/MainEditor";
 import LeftSidebar from "./components/LeftSidebar";
 import TopNavigationBar from "./components/TopNavigationBar";
 import CreativeBranchingDialog from "./components/CreativeBranchingDialog";
+import BrainstormDialog from "./components/BrainstormDialog";
 import {
 	generateWrite,
 	generateDescribe,
@@ -21,6 +22,7 @@ function App() {
 	const [error, setError] = useState(null);
 	const [isCreativeBranchingOpen, setIsCreativeBranchingOpen] =
 		useState(false);
+	const [isBrainstormDialogOpen, setIsBrainstormDialogOpen] = useState(false);
 	const [storyContext, setStoryContext] = useState({
 		genre: "",
 		style: "",
@@ -37,6 +39,11 @@ function App() {
 	const toggleCreativeBranching = useCallback(() => {
 		setIsCreativeBranchingOpen(!isCreativeBranchingOpen);
 	}, [isCreativeBranchingOpen]);
+
+	// Toggle brainstorm dialog
+	const toggleBrainstormDialog = useCallback(() => {
+		setIsBrainstormDialogOpen(!isBrainstormDialogOpen);
+	}, [isBrainstormDialogOpen]);
 
 	const handleEditorChange = useCallback((e) => {
 		const newContent = e.target.value;
@@ -183,6 +190,34 @@ function App() {
 		}
 	}, [editorContent, handleEditorChange, storyContext]);
 
+	const handleBrainstormResult = useCallback(
+		(generatedText) => {
+			// Convert markdown to HTML with proper paragraph styling
+			const html = marked.parse(
+				`\n\n**Brainstorm Results:**\n${generatedText}`
+			);
+
+			// Insert the HTML content
+			if (editorRef.current) {
+				// If there's existing content, add a proper paragraph break
+				if (editorContent.trim()) {
+					editorRef.current.innerHTML =
+						editorRef.current.innerHTML +
+						'<div class="paragraph-break" style="margin: 1em 0;"></div>' +
+						html;
+				} else {
+					editorRef.current.innerHTML = html;
+				}
+
+				// Get the new content as text for tracking state
+				const newContent = editorRef.current.innerText;
+				setEditorContent(newContent);
+				handleEditorChange({ target: { value: newContent } });
+			}
+		},
+		[editorContent, handleEditorChange]
+	);
+
 	return (
 		<div className="flex flex-col h-screen">
 			<TopNavigationBar
@@ -191,8 +226,9 @@ function App() {
 				handleSave={handleSave}
 				onGenerateWrite={handleGenerateWrite}
 				onGenerateDescribe={handleGenerateDescribe}
-				onGenerateBrainstorm={handleGenerateBrainstorm}
+				onGenerateBrainstorm={toggleBrainstormDialog} // Update to open dialog instead of direct generation
 				onOpenCreativeBranching={toggleCreativeBranching}
+				onOpenBrainstormDialog={toggleBrainstormDialog}
 			/>
 			<div className="flex flex-1 overflow-hidden">
 				<LeftSidebar
@@ -223,6 +259,13 @@ function App() {
 				onClose={() => setIsCreativeBranchingOpen(false)}
 				editorContent={editorContent}
 				storyContext={storyContext}
+			/>
+			<BrainstormDialog
+				isOpen={isBrainstormDialogOpen}
+				onClose={() => setIsBrainstormDialogOpen(false)}
+				editorContent={editorContent}
+				storyContext={storyContext}
+				onBrainstormGenerated={handleBrainstormResult}
 			/>
 		</div>
 	);

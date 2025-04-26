@@ -64,7 +64,7 @@ export default function CreativeBranchingDialog({
 		try {
 			const payload = {
 				instruction: `Generate 3 distinct story branches for this scenario: "${scenarioText}" with branching question: "${branchQuestion}"`,
-				current_text: editorContent,
+				current_text: `${editorContent}\n\nCurrent scenario: ${scenarioText}`,
 				story_context: storyContext,
 			};
 
@@ -97,6 +97,7 @@ export default function CreativeBranchingDialog({
 		setScenarioText(branch.content || "");
 		setBranchQuestion("");
 		setBranches([]);
+		setActiveTab("visualization");
 	};
 
 	const handleGoBack = () => {
@@ -148,6 +149,18 @@ export default function CreativeBranchingDialog({
 			}
 		}
 		return historyItem.question || `Branch ${index + 1}`;
+	};
+
+	// Helper to get the title of the current branch
+	const getCurrentBranchTitle = () => {
+		if (branchHistory.length > 0) {
+			const lastHistory = branchHistory[branchHistory.length - 1];
+			const current = lastHistory.branches.find(
+				(b) => b.id === currentScenario
+			);
+			return current ? current.title : "";
+		}
+		return "";
 	};
 
 	return (
@@ -443,7 +456,8 @@ export default function CreativeBranchingDialog({
 												<div className="h-8 w-0.5 bg-gray-400"></div>
 												<div className="p-3 rounded-lg border-2 border-pink-500 bg-pink-50 mb-4 w-64 text-center">
 													<p className="font-medium">
-														Current Path
+														{getCurrentBranchTitle() ||
+															"Current Path"}
 													</p>
 													<p className="text-xs text-gray-600 truncate">
 														{scenarioText.slice(

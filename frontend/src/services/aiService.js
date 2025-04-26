@@ -122,17 +122,36 @@ export async function generateStoryBranches(payload) {
 	};
 	const response = await fetchFromApi("/generate/story-branches", body);
 
-	// Ensure we have proper branch objects with correct field names
+	// Robustly parse branches: handle stringified JSON/code block
+	let branches = response.branches;
+	if (typeof branches === "string") {
+		// Remove code block markers and try to parse
+		const codeBlockMatch = branches.match(/```(?:json)?([\s\S]*?)```/i);
+		if (codeBlockMatch) {
+			branches = codeBlockMatch[1].trim();
+		}
+		try {
+			branches = JSON.parse(branches);
+		} catch (e) {
+			console.warn("Failed to parse branches string as JSON", e);
+			branches = [];
+		}
+	}
+
 	try {
-		if (response.branches) {
-			// Map backend field names to frontend expected field names
-			return response.branches.map((branch) => ({
-				id:
-					branch.id ||
-					`branch-${Math.random().toString(36).substr(2, 9)}`,
-				title: branch.title || "Untitled Branch",
-				summary: branch.summary || "",
-				content: branch.content || "",
+		if (Array.isArray(branches)) {
+			return branches.map((branch, idx) => ({
+				id: (branch.id || branch.branch_id || idx + 1).toString(),
+				title:
+					branch.title ||
+					branch.branch_title ||
+					`Story Path ${idx + 1}`,
+				summary: branch.summary || branch.branch_summary || "",
+				content:
+					branch.content ||
+					branch.continuation ||
+					branch.branch_continuation ||
+					"",
 			}));
 		} else {
 			console.warn("No branches found in the response:", response);

@@ -22,6 +22,7 @@ export default function TopNavigationBar({
 	onGenerateBrainstorm,
 	onShowContextPanel, // Add prop for Context button
 	onOpenCreativeBranching, // Add prop for Creative Branching button
+	onOpenBrainstormDialog, // Add prop for Brainstorm dialog
 }) {
 	return (
 		<div className="flex justify-between items-center p-2 bg-gradient-to-r from-pink-200 to-pink-100 border-b border-gray-200">
@@ -56,7 +57,7 @@ export default function TopNavigationBar({
 					<ToolbarButton
 						icon={<Brain size={16} />}
 						label="Brainstorm"
-						onClick={onGenerateBrainstorm} // Attach handler
+						onClick={onOpenBrainstormDialog} // Use the new dialog instead of direct generation
 					/>
 					<Divider />
 					<ToolbarButton
