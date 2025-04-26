@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { generateRewrite } from "../services/aiService";
-import ReactMarkdown from "react-markdown";
+import { marked } from "marked";
 
 export default function MainEditor({
 	activeDocument,
@@ -28,7 +28,6 @@ export default function MainEditor({
 	const [showTooltip, setShowTooltip] = useState(false);
 	const [range, setRange] = useState(null);
 	const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
-	const [lastAiOutput, setLastAiOutput] = useState(""); // Store last AI output for markdown rendering
 
 	useEffect(() => {
 		if (
@@ -98,14 +97,43 @@ export default function MainEditor({
 						throw new Error(`Unsupported AI action: ${actionType}`);
 				}
 
-				range.deleteContents();
-				const textNode = document.createTextNode(generatedText);
-				range.insertNode(textNode);
+				// Preserve the range reference before we modify the DOM
+				const rangeContainer = range.commonAncestorContainer;
 
+				// Convert markdown to HTML and prepare fragment
+				const html = marked.parse(generatedText);
+
+				// Create a wrapper div to ensure proper formatting is preserved
+				const wrapper = document.createElement("div");
+				wrapper.innerHTML = html;
+
+				// Style paragraphs for proper spacing if needed
+				const paragraphs = wrapper.querySelectorAll("p");
+				paragraphs.forEach((p) => {
+					// Add bottom margin to paragraphs for spacing
+					if (
+						p.nextElementSibling &&
+						p.nextElementSibling.tagName === "P"
+					) {
+						p.style.marginBottom = "1em";
+					}
+				});
+
+				// Delete selected content and insert the new formatted content
+				range.deleteContents();
+
+				// Insert each child node individually to maintain formatting
+				Array.from(wrapper.childNodes).forEach((node) => {
+					range.insertNode(node.cloneNode(true));
+					// Move the range point to after the inserted node
+					range.setStartAfter(node);
+					range.collapse(true);
+				});
+
+				// Update the editor content state
 				handleEditorChange({
 					target: { value: editorRef.current.innerText },
 				});
-				setLastAiOutput(generatedText); // Save for markdown rendering
 			} catch (err) {
 				console.error("AI Action failed:", err);
 				setError(err.message || "Failed to perform AI action.");
@@ -179,12 +207,6 @@ export default function MainEditor({
 					onMouseUp={handleTextSelection}
 					onKeyUp={handleTextSelection}
 				></div>
-				{/* Render last AI output as markdown if present */}
-				{lastAiOutput && (
-					<div className="mt-4 p-4 bg-gray-50 border rounded">
-						<ReactMarkdown>{lastAiOutput}</ReactMarkdown>
-					</div>
-				)}
 				{showTooltip && (
 					<Tooltip
 						tooltipPosition={tooltipPosition}

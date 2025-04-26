@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 import logging
+import re
 
 # --- Configuration & Initialization ---
 
@@ -38,6 +39,17 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     """Response model containing the generated text."""
     generated_text: str
+
+class StoryBranch(BaseModel):
+    """Story branch model containing title, content, and summary."""
+    id: str
+    title: str
+    summary: str
+    content: str
+
+class StoryBranchesResponse(BaseModel):
+    """Response model containing multiple story branches."""
+    branches: List[StoryBranch]
 
 # --- Gemini Client Initialization ---
 
@@ -246,6 +258,259 @@ async def generate_brainstorm(
         logger.exception("Error during Gemini API call for /generate/brainstorm")
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
+@app.post("/generate/context/{element_type}", response_model=GenerateResponse)
+async def generate_context_element(
+    element_type: str,
+    request: GenerateRequest,
+    client: genai.Client = Depends(get_gemini_client)
+):
+    """Generates content for specific story context elements (characters, genre, style, etc.)."""
+    logger.info(f"Received /generate/context/{element_type} request: {request.instruction}")
+    
+    # Define specialized prompts based on the element type
+    element_descriptions = {
+        "characters": "Create detailed, well-rounded character(s) that would fit this story",
+        "genre": "Suggest appropriate genre(s) and subgenres for this story",
+        "style": "Suggest appropriate writing style(s) for this story",
+        "worldbuilding": "Create detailed, compelling worldbuilding elements for this story",
+        "synopsis": "Create a concise synopsis for this story",
+        "outline": "Create a story outline with key plot points",
+    }
+    
+    if element_type not in element_descriptions:
+        raise HTTPException(status_code=400, detail=f"Unsupported context element type: {element_type}")
+    
+    # Build a specialized prompt for the requested element type
+    prompt = build_prompt(request, element_descriptions[element_type])
+    
+    # Add specialized instructions based on element type
+    if element_type == "characters":
+        prompt += "\n\nProvide 1-3 well-developed characters with name, age, background, personality, motivations, and physical appearance. Format with markdown headings for character names."
+    elif element_type == "genre":
+        prompt += "\n\nProvide 3-5 genre suggestions with brief explanations of why they would fit this story. Use markdown bullet points."
+    elif element_type == "style":
+        prompt += "\n\nProvide 3-5 writing style suggestions with examples of how they would affect the narrative. Use markdown bullet points."
+    elif element_type == "worldbuilding":
+        prompt += "\n\nProvide detailed worldbuilding elements covering settings, cultures, systems, and atmosphere relevant to this story. Use markdown headings to organize."
+    elif element_type == "synopsis":
+        prompt += "\n\nProvide a compelling 1-2 paragraph synopsis that captures the essence of the story."
+    elif element_type == "outline":
+        prompt += "\n\nProvide a structured outline with key plot points, using markdown formatting for clarity."
+    
+    logger.debug(f"Constructed Prompt for {element_type.capitalize()} generation:\n{prompt}")
+
+    try:
+        # Use slightly different generation config for creative elements
+        context_config = types.GenerateContentConfig(
+            temperature=0.8,  # Slightly higher temperature for creative content
+            # max_output_tokens=1024
+        )
+        
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[prompt],
+            config=context_config
+        )
+        
+        generated_text = response.text.strip()
+        logger.info(f"Gemini response received for {element_type} generation. Length: {len(generated_text)}")
+        return GenerateResponse(generated_text=generated_text)
+    except Exception as e:
+        logger.exception(f"Error during Gemini API call for /generate/context/{element_type}")
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+@app.post("/generate/story-branches", response_model=StoryBranchesResponse)
+async def generate_story_branches(
+    request: GenerateRequest,
+    client: genai.Client = Depends(get_gemini_client)
+):
+    """Generates multiple story branches based on a scenario and branching question."""
+    logger.info(f"Received /generate/story-branches request: {request.instruction}")
+    
+    # Extract scenario and branching question from instruction if possible
+    scenario = ""
+    question = ""
+    
+    # Try to extract scenario and question from the instruction
+    if "scenario:" in request.instruction.lower() and "question:" in request.instruction.lower():
+        parts = request.instruction.split("with branching question:", 1)
+        if len(parts) > 1:
+            scenario_part = parts[0].replace("Generate 3 distinct story branches for this scenario:", "").strip()
+            scenario = scenario_part.strip('"')
+            question = parts[1].strip().strip('"')
+    
+    # Build a specialized prompt for branch generation
+    prompt = f"""You are an expert storyteller and creative writing assistant. 
+Generate 3 distinct and interesting story branches or paths that could follow from this scenario:
+
+--- Current Scenario ---
+{scenario}
+
+--- Branching Question ---
+{question}
+
+--- Current Story Context ---
+{build_story_context_section(request.story_context)}
+
+For each branch, provide:
+1. A clear title that captures the essence of this path
+2. A brief summary of what happens in this branch (1-2 sentences)
+3. A more detailed continuation of the story following this path (1-2 paragraphs)
+
+Format your response as structured data that can be parsed into separate branches. Make each branch creative, detailed, and distinct from the others."""
+    
+    logger.debug(f"Constructed Prompt for Story Branches:\n{prompt}")
+
+    # Use slightly higher temperature for creative branching
+    branching_config = types.GenerateContentConfig(
+        temperature=0.85,
+        # max_output_tokens=1024
+    )
+    
+    try:
+        response = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=[prompt],
+            config=branching_config
+        )
+        
+        raw_text = response.text.strip()
+        logger.info(f"Gemini response received for story branches. Length: {len(raw_text)}")
+        
+        # Parse the generated branches into structured data
+        branches = parse_story_branches(raw_text)
+        logger.info(f"Parsed {len(branches)} branches from response")
+        
+        return StoryBranchesResponse(branches=branches)
+    except Exception as e:
+        logger.exception("Error during Gemini API call for /generate/story-branches")
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
+
+# --- Helper Functions ---
+
+def build_story_context_section(story_context):
+    """Build a formatted string of the story context for prompts."""
+    if not story_context:
+        return "No additional context provided."
+    
+    sections = []
+    if story_context.genre:
+        sections.append(f"Genre: {story_context.genre}")
+    if story_context.style:
+        sections.append(f"Style: {story_context.style}")
+    if story_context.synopsis:
+        sections.append(f"Synopsis: {story_context.synopsis}")
+    if story_context.characters:
+        sections.append(f"Characters: {story_context.characters}")
+    if story_context.worldbuilding:
+        sections.append(f"Worldbuilding: {story_context.worldbuilding}")
+    if story_context.outline:
+        sections.append(f"Outline: {story_context.outline}")
+    
+    return "\n\n".join(sections) if sections else "No additional context provided."
+
+def parse_story_branches(text):
+    """Parse the generated text into structured story branches."""
+    branches = []
+    
+    # First try to parse the response as JSON if it looks like JSON
+    if text.strip().startswith("[") and text.strip().endswith("]"):
+        try:
+            import json
+            branch_data = json.loads(text)
+            if isinstance(branch_data, list):
+                for i, branch in enumerate(branch_data):
+                    # Map the fields from the JSON format to our expected format
+                    branch_id = str(branch.get("branch_id", i+1))
+                    branches.append(StoryBranch(
+                        id=f"branch-{branch_id}",
+                        title=branch.get("title", f"Branch {branch_id}"),
+                        summary=branch.get("summary", ""),
+                        content=branch.get("continuation", "") or branch.get("content", "")
+                    ))
+                return branches
+        except json.JSONDecodeError:
+            # If JSON parsing fails, fall back to text parsing
+            logger.warning("Failed to parse branches as JSON, falling back to text parsing")
+    
+    # If JSON parsing failed or text doesn't look like JSON, use the text parser
+    current_branch = None
+    current_section = None
+    branch_count = 0
+    
+    lines = text.split('\n')
+    for line in lines:
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+            
+        # Look for branch headers (Branch 1, Option 1, Path 1, etc.)
+        if re.search(r'^(Branch|Option|Path|Choice|Alternative)\s*[0-9]', line, re.IGNORECASE):
+            # Save previous branch if it exists
+            if current_branch and 'title' in current_branch and 'content' in current_branch:
+                branch_count += 1
+                branches.append(StoryBranch(
+                    id=f"branch-{branch_count}",
+                    title=current_branch.get('title', f"Branch {branch_count}"),
+                    summary=current_branch.get('summary', ""),
+                    content=current_branch.get('content', "")
+                ))
+            
+            # Start a new branch
+            current_branch = {}
+            current_section = 'title'
+            # Extract just the title part after "Branch X:" if present
+            title_match = re.search(r'^(?:Branch|Option|Path|Choice|Alternative)\s*[0-9]:?\s*(.*)', line, re.IGNORECASE)
+            if title_match:
+                current_branch['title'] = title_match.group(1).strip()
+            else:
+                current_branch['title'] = line
+            continue
+            
+        # Look for section headers
+        if current_branch:
+            if re.search(r'^title:', line, re.IGNORECASE):
+                current_section = 'title'
+                current_branch['title'] = line.split(':', 1)[1].strip() if ':' in line else ""
+                continue
+            elif re.search(r'^summary:', line, re.IGNORECASE):
+                current_section = 'summary'
+                current_branch['summary'] = line.split(':', 1)[1].strip() if ':' in line else ""
+                continue
+            elif re.search(r'^content:|^description:|^continuation:', line, re.IGNORECASE):
+                current_section = 'content'
+                current_branch['content'] = line.split(':', 1)[1].strip() if ':' in line else ""
+                continue
+            
+            # Add content to the current section
+            if current_section:
+                current_branch[current_section] = current_branch.get(current_section, "") + " " + line
+    
+    # Add the last branch if there is one
+    if current_branch and 'title' in current_branch and 'content' in current_branch:
+        branch_count += 1
+        branches.append(StoryBranch(
+            id=f"branch-{branch_count}",
+            title=current_branch.get('title', f"Branch {branch_count}"),
+            summary=current_branch.get('summary', ""),
+            content=current_branch.get('content', "")
+        ))
+    
+    # If we didn't successfully parse any branches, create three generic ones
+    if not branches:
+        # Create three generic branches from the full text
+        summary_length = min(100, len(text) // 3)
+        for i in range(3):
+            branches.append(StoryBranch(
+                id=f"branch-{i+1}",
+                title=f"Story Path {i+1}",
+                summary=text[:summary_length] + "...",
+                content=text
+            ))
+    
+    return branches
 
 # --- Root Endpoint for Health Check ---
 @app.get("/")

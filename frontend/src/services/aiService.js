@@ -89,3 +89,71 @@ export async function generateBrainstorm(payload) {
 	const response = await fetchFromApi("/generate/brainstorm", body);
 	return response.generated_text;
 }
+
+/**
+ * Calls the /generate/context/{element_type} endpoint to generate context elements.
+ * @param {string} elementType - Type of context element (characters, genre, style, etc.)
+ * @param {object} payload - Contains instruction, current_text, story_context.
+ * @returns {Promise<string>} The generated text.
+ */
+export async function generateContextElement(elementType, payload) {
+	// Set a default instruction if none is provided
+	const body = {
+		instruction: `Generate ${elementType} for my story`,
+		...payload,
+	};
+	const response = await fetchFromApi(
+		`/generate/context/${elementType}`,
+		body
+	);
+	return response.generated_text;
+}
+
+/**
+ * Calls the /generate/story-branches endpoint to generate alternative story branches.
+ * @param {object} payload - Contains instruction, current_text, story_context.
+ * @returns {Promise<Array>} Array of generated story branches.
+ */
+export async function generateStoryBranches(payload) {
+	// Add a default instruction if none is provided for simplicity
+	const body = {
+		instruction: "Generate alternative story branches",
+		...payload,
+	};
+	const response = await fetchFromApi("/generate/story-branches", body);
+
+	// Ensure we have proper branch objects with correct field names
+	try {
+		if (response.branches) {
+			// Map backend field names to frontend expected field names
+			return response.branches.map((branch) => ({
+				id:
+					branch.id ||
+					`branch-${Math.random().toString(36).substr(2, 9)}`,
+				title: branch.title || "Untitled Branch",
+				summary: branch.summary || "",
+				content: branch.content || "",
+			}));
+		} else {
+			console.warn("No branches found in the response:", response);
+			return [];
+		}
+	} catch (err) {
+		console.error("Error parsing branches response:", err);
+		throw new Error("Failed to parse story branches response");
+	}
+}
+
+// Export element-specific helper functions for better developer experience
+export const generateCharacters = (payload) =>
+	generateContextElement("characters", payload);
+export const generateGenre = (payload) =>
+	generateContextElement("genre", payload);
+export const generateStyle = (payload) =>
+	generateContextElement("style", payload);
+export const generateWorldbuilding = (payload) =>
+	generateContextElement("worldbuilding", payload);
+export const generateSynopsis = (payload) =>
+	generateContextElement("synopsis", payload);
+export const generateOutline = (payload) =>
+	generateContextElement("outline", payload);

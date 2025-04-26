@@ -8,6 +8,7 @@ import {
 	RefreshCw,
 	Save,
 	SlidersHorizontal, // Import SlidersHorizontal for Context button
+	GitBranch, // Import GitBranch for Creative Branching button
 } from "lucide-react";
 
 export default function TopNavigationBar({
@@ -20,6 +21,7 @@ export default function TopNavigationBar({
 	onGenerateDescribe,
 	onGenerateBrainstorm,
 	onShowContextPanel, // Add prop for Context button
+	onOpenCreativeBranching, // Add prop for Creative Branching button
 }) {
 	return (
 		<div className="flex justify-between items-center p-2 bg-gradient-to-r from-pink-200 to-pink-100 border-b border-gray-200">
@@ -67,6 +69,12 @@ export default function TopNavigationBar({
 						icon={<SlidersHorizontal size={16} />}
 						label="Context"
 						onClick={onShowContextPanel} // Attach handler for Context button
+					/>
+					<Divider />
+					<ToolbarButton
+						icon={<GitBranch size={16} />}
+						label="Creative Branching"
+						onClick={onOpenCreativeBranching} // Attach handler for Creative Branching button
 					/>
 				</div>
 			</div>

@@ -3,11 +3,13 @@ import RightSidebar from "./components/RightSidebar";
 import MainEditor from "./components/MainEditor";
 import LeftSidebar from "./components/LeftSidebar";
 import TopNavigationBar from "./components/TopNavigationBar";
+import CreativeBranchingDialog from "./components/CreativeBranchingDialog";
 import {
 	generateWrite,
 	generateDescribe,
 	generateBrainstorm,
 } from "./services/aiService";
+import { marked } from "marked";
 
 function App() {
 	const [isStoryBibleEnabled, setIsStoryBibleEnabled] = useState(true);
@@ -17,6 +19,8 @@ function App() {
 	const [editorContent, setEditorContent] = useState("");
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState(null);
+	const [isCreativeBranchingOpen, setIsCreativeBranchingOpen] =
+		useState(false);
 	const [storyContext, setStoryContext] = useState({
 		genre: "",
 		style: "",
@@ -28,6 +32,11 @@ function App() {
 	});
 
 	const editorRef = useRef(null);
+
+	// Toggle creative branching dialog
+	const toggleCreativeBranching = useCallback(() => {
+		setIsCreativeBranchingOpen(!isCreativeBranchingOpen);
+	}, [isCreativeBranchingOpen]);
 
 	const handleEditorChange = useCallback((e) => {
 		const newContent = e.target.value;
@@ -43,6 +52,7 @@ function App() {
 	};
 
 	const handleGenerateWrite = useCallback(async () => {
+		console.log("handleGenerateWrite called");
 		setIsLoading(true);
 		setError(null);
 		try {
@@ -55,12 +65,29 @@ function App() {
 					: undefined,
 			};
 			const generatedText = await generateWrite(payload);
-			const newContent = editorContent + "\n" + generatedText;
-			setEditorContent(newContent);
+
+			// Convert markdown to HTML with proper paragraph styling
+			const html = marked.parse(generatedText);
+
+			// Insert the HTML content
 			if (editorRef.current) {
-				editorRef.current.innerText = newContent;
+				// If there's existing content, add a proper paragraph break
+				if (editorContent.trim()) {
+					// Add two paragraph elements to create visual spacing between content
+					editorRef.current.innerHTML =
+						editorRef.current.innerHTML +
+						'<div class="paragraph-break" style="margin: 1em 0;"></div>' +
+						html;
+				} else {
+					// If no content, just set the HTML directly
+					editorRef.current.innerHTML = html;
+				}
+
+				// Get the new content as text for tracking state
+				const newContent = editorRef.current.innerText;
+				setEditorContent(newContent);
+				handleEditorChange({ target: { value: newContent } });
 			}
-			handleEditorChange({ target: { value: newContent } });
 		} catch (err) {
 			console.error("Generate Write failed:", err);
 			setError(err.message || "Failed to generate text.");
@@ -70,6 +97,7 @@ function App() {
 	}, [editorContent, handleEditorChange, storyContext]);
 
 	const handleGenerateDescribe = useCallback(async () => {
+		console.log("handleGenerateDescribe called");
 		setIsLoading(true);
 		setError(null);
 		try {
@@ -81,13 +109,27 @@ function App() {
 					: undefined,
 			};
 			const generatedText = await generateDescribe(payload);
-			const newContent =
-				editorContent + "\n\n[Description]:\n" + generatedText;
-			setEditorContent(newContent);
+
+			// Convert markdown to HTML with proper paragraph styling
+			const html = marked.parse(`\n\n**Description:**\n${generatedText}`);
+
+			// Insert the HTML content
 			if (editorRef.current) {
-				editorRef.current.innerText = newContent;
+				// If there's existing content, add a proper paragraph break
+				if (editorContent.trim()) {
+					editorRef.current.innerHTML =
+						editorRef.current.innerHTML +
+						'<div class="paragraph-break" style="margin: 1em 0;"></div>' +
+						html;
+				} else {
+					editorRef.current.innerHTML = html;
+				}
+
+				// Get the new content as text for tracking state
+				const newContent = editorRef.current.innerText;
+				setEditorContent(newContent);
+				handleEditorChange({ target: { value: newContent } });
 			}
-			handleEditorChange({ target: { value: newContent } });
 		} catch (err) {
 			console.error("Generate Describe failed:", err);
 			setError(err.message || "Failed to generate description.");
@@ -97,6 +139,7 @@ function App() {
 	}, [editorContent, handleEditorChange, storyContext]);
 
 	const handleGenerateBrainstorm = useCallback(async () => {
+		console.log("handleGenerateBrainstorm called");
 		setIsLoading(true);
 		setError(null);
 		try {
@@ -109,13 +152,29 @@ function App() {
 					: undefined,
 			};
 			const generatedText = await generateBrainstorm(payload);
-			const newContent =
-				editorContent + "\n\n[Brainstorm Ideas]:\n" + generatedText;
-			setEditorContent(newContent);
+
+			// Convert markdown to HTML with proper paragraph styling
+			const html = marked.parse(
+				`\n\n**Brainstorm Ideas:**\n${generatedText}`
+			);
+
+			// Insert the HTML content
 			if (editorRef.current) {
-				editorRef.current.innerText = newContent;
+				// If there's existing content, add a proper paragraph break
+				if (editorContent.trim()) {
+					editorRef.current.innerHTML =
+						editorRef.current.innerHTML +
+						'<div class="paragraph-break" style="margin: 1em 0;"></div>' +
+						html;
+				} else {
+					editorRef.current.innerHTML = html;
+				}
+
+				// Get the new content as text for tracking state
+				const newContent = editorRef.current.innerText;
+				setEditorContent(newContent);
+				handleEditorChange({ target: { value: newContent } });
 			}
-			handleEditorChange({ target: { value: newContent } });
 		} catch (err) {
 			console.error("Generate Brainstorm failed:", err);
 			setError(err.message || "Failed to brainstorm ideas.");
@@ -133,11 +192,15 @@ function App() {
 				onGenerateWrite={handleGenerateWrite}
 				onGenerateDescribe={handleGenerateDescribe}
 				onGenerateBrainstorm={handleGenerateBrainstorm}
+				onOpenCreativeBranching={toggleCreativeBranching}
 			/>
 			<div className="flex flex-1 overflow-hidden">
 				<LeftSidebar
 					isStoryBibleEnabled={isStoryBibleEnabled}
 					setIsStoryBibleEnabled={setIsStoryBibleEnabled}
+					storyContext={storyContext}
+					setStoryContext={setStoryContext}
+					editorContent={editorContent}
 				/>
 				<MainEditor
 					activeDocument={activeDocument}
@@ -155,6 +218,12 @@ function App() {
 					setStoryContext={setStoryContext}
 				/>
 			</div>
+			<CreativeBranchingDialog
+				isOpen={isCreativeBranchingOpen}
+				onClose={() => setIsCreativeBranchingOpen(false)}
+				editorContent={editorContent}
+				storyContext={storyContext}
+			/>
 		</div>
 	);
 }
